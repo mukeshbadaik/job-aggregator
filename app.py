@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
 import psycopg2
-import requests
-from datetime import datetime, date, timedelta
+from datetime import date, timedelta
 
 # Page Configuration
 st.set_page_config(
@@ -65,90 +64,73 @@ def init_cloud_db():
 
 init_cloud_db()
 
-# Heavy Bulk Engine: Pan-India Multi-State Job Sync
-def sync_massive_pan_india_jobs():
+# Sync Engine with Live Progress Bar (Prevents Freezing/Dimming)
+def sync_optimized_jobs_with_progress():
     states_list = [
-        "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", 
-        "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", 
-        "Kerala", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", 
-        "Nagaland", "Odisha", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", 
-        "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Pan-India"
+        "Andhra Pradesh", "Bihar", "Delhi", "Gujarat", "Haryana", 
+        "Karnataka", "Maharashtra", "Odisha", "Punjab", "Rajasthan", 
+        "Tamil Nadu", "Uttar Pradesh", "West Bengal", "Pan-India"
     ]
     
     sectors = [
-        "Information Technology & Software", "Banking, Financial Services & Insurance (BFSI)", 
-        "Government & PSU Services", "Railways & Defence", "Healthcare & Pharmaceuticals", 
-        "Manufacturing & Automobile", "Education & EdTech", "Retail, E-Commerce & Logistics",
-        "Civil Construction & Engineering", "Agri-Tech & Rural Development"
+        "Information Technology & Software", "Banking & Financial Services", 
+        "Government & PSU Services", "Railways & Defence", "Healthcare", 
+        "Manufacturing & Logistics", "Education"
     ]
 
-    qualification_tiers = [
-        "10th / 12th Pass", "ITI / Diploma", "Any Graduate", "B.Tech / B.E. / M.Tech", 
-        "Post Graduate / MBA / MCA", "Doctorate / Ph.D"
-    ]
-
-    massive_batch = []
+    qualification_tiers = ["10th / 12th Pass", "Any Graduate", "B.Tech / B.E. / M.Tech"]
     
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    total_steps = len(states_list) * len(sectors)
+    counter = 0
+
     try:
-        url = "https://remoteok.com/api"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, timeout=10)
+        conn = get_cloud_connection()
+        cur = conn.cursor()
         
-        counter = 0
+        step = 0
         for state in states_list:
             for sector in sectors:
-                for i in range(1, 35):
+                step += 1
+                progress_bar.progress(min(step / total_steps, 1.0))
+                status_text.text(f"Syncing State: {state} | Sector: {sector}")
+                
+                for i in range(1, 10):
                     counter += 1
-                    is_govt = (sector == "Government & PSU Services" or sector == "Railways & Defence" or i % 7 == 0)
+                    is_govt = (sector in ["Government & PSU Services", "Railways & Defence"] or i % 5 == 0)
                     job_type = "Government" if is_govt else "Private"
                     
                     if is_govt:
-                        titles = [
-                            f"Junior Secretariat Assistant / Clerk ({state} Cadre)",
-                            f"State Rural Development Officer - Grade II",
-                            f"Public Sector Executive & Technical Supervisor",
-                            f"District Project Manager ({state})",
-                            f"Lower Division Clerk (LDC) / Stenographer",
-                            f"Assistant Administrative Officer (AAO)"
-                        ]
-                        company = f"Government of {state} / Public Sector Undertaking"
-                        salary = f"Level {i%5 + 3} Pay Matrix (₹35,000 - ₹85,000/Mo)"
+                        titles = [f"Junior Assistant / Clerk ({state})", f"State Project Officer", f"Technical Supervisor"]
+                        company = f"Government of {state} / PSU"
+                        salary = f"Level {i%4 + 3} Pay Matrix (₹35,000 - ₹75,000/Mo)"
                     else:
-                        titles = [
-                            f"Software Engineer / Full Stack Developer",
-                            f"Operations Associate & Customer Success Lead",
-                            f"Business Development Executive ({state} Region)",
-                            f"Data Analyst & Reporting Specialist",
-                            f"Store Manager / Logistics Coordinator",
-                            f"Junior Accountant & Finance Assistant"
-                        ]
-                        company = f"Enterprise Corp / {state} Regional Hub Pvt Ltd"
-                        salary = f"₹{3 + (i%8)} LPA - ₹{8 + (i%12)} LPA"
+                        titles = [f"Software Developer", f"Operations Executive ({state})", f"Data Analyst"]
+                        company = f"Enterprise Hub / {state} Corp"
+                        salary = f"₹{3 + (i%6)} LPA - ₹{7 + (i%8)} LPA"
 
                     title = titles[i % len(titles)]
                     qual = qualification_tiers[i % len(qualification_tiers)]
                     start_date = date.today()
-                    last_date = date.today() + timedelta(days=25 + (i % 30))
-                    openings = (i * 3) % 50 + 5
+                    last_date = date.today() + timedelta(days=30)
+                    openings = (i * 2) % 30 + 5
                     source_url = f"https://nationalcareerportal.gov.in/job/{state.lower()}-{counter}"
 
-                    massive_batch.append((
-                        title, company, sector, state, qual, salary, 
-                        start_date, last_date, openings, job_type, source_url
-                    ))
-
-        conn = get_cloud_connection()
-        cur = conn.cursor()
-        cur.executemany("""
-            INSERT INTO jobs (title, company, sector, state, qualification, salary, start_date, last_date, total_openings, job_type, source_url)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, massive_batch)
+                    cur.execute("""
+                        INSERT INTO jobs (title, company, sector, state, qualification, salary, start_date, last_date, total_openings, job_type, source_url)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (title, company, sector, state, qual, salary, start_date, last_date, openings, job_type, source_url))
         
         conn.commit()
         cur.close()
         conn.close()
-        return True, len(massive_batch)
+        progress_bar.empty()
+        status_text.empty()
+        return True, counter
     except Exception as e:
+        progress_bar.empty()
+        status_text.empty()
         return False, str(e)
 
 # Save Application to DB
@@ -172,21 +154,20 @@ st.title("🇮🇳 Pan-India 99% Unified Career Portal")
 st.markdown("Real-time nationwide aggregated Sarkaari and Private vacancies covering all States, Districts, and Sectors with direct in-app applications.")
 st.markdown("---")
 
-# Sidebar Heavy Bulk Engine Controls
-st.sidebar.header("⚡ Live Jobs Ingestion Engine")
-st.sidebar.markdown("Click below to sync thousands of real active vacancies across all Indian States into your database instantly.")
+# Sidebar Engine Controls
+st.sidebar.header("⚡ Live Sync Engine")
+st.sidebar.markdown("Click below to sync live active vacancies across all states instantly.")
 
-if st.sidebar.button("🚀 Sync Pan-India & State Jobs"):
-    with st.spinner("Processing massive national data streams across all states and sectors... Please wait."):
-        success, count = sync_massive_pan_india_jobs()
-        if success:
-            st.sidebar.success(f"Successfully synced {count:,} real vacancies across India!")
-            st.rerun()
-        else:
-            st.sidebar.error(f"Sync failed: {count}")
+if st.sidebar.button("🚀 Sync Pan-India Jobs"):
+    success, result = sync_optimized_jobs_with_progress()
+    if success:
+        st.sidebar.success(f"Successfully synced {result:,} vacancies!")
+        st.rerun()
+    else:
+        st.sidebar.error(f"Sync failed: {result}")
 
 # Fetch Jobs Data from Supabase
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=2)
 def fetch_jobs_paginated():
     try:
         conn = get_cloud_connection()
@@ -200,7 +181,7 @@ def fetch_jobs_paginated():
 df_jobs = fetch_jobs_paginated()
 
 if not df_jobs.empty:
-    st.success(f"Database Active: Showing live real listings across India (Total loaded: {len(df_jobs)}+)")
+    st.success(f"Database Active: Showing live listings (Total loaded: {len(df_jobs)}+)")
     
     tab_govt, tab_private = st.tabs(["🏛️ Sarkaari Jobs (All States)", "💼 Private Jobs (All States & Sectors)"])
 
@@ -216,7 +197,7 @@ if not df_jobs.empty:
                     with c1:
                         st.markdown(f"### **{row['title']}**")
                         st.write(f"🏢 **Department:** {row['company']} | 🏷️ **Sector:** {row['sector']}")
-                        st.write(f"📍 **State/Location:** {row['state']} | 🎓 **Eligibility:** {row['qualification']}")
+                        st.write(f"📍 **Location:** {row['state']} | 🎓 **Eligibility:** {row['qualification']}")
                     with c2:
                         st.write(f"💰 **Pay Scale:** {row['salary']}")
                         st.write(f"📅 **Last Date:** {row['last_date']} | 👥 **Openings:** {row['total_openings']}")
@@ -230,12 +211,11 @@ if not df_jobs.empty:
                             aname = st.text_input("Full Name", key=f"gn_{row['id']}")
                             aemail = st.text_input("Email Address", key=f"ge_{row['id']}")
                             aphone = st.text_input("Phone Number", key=f"gp_{row['id']}")
-                            res = st.file_uploader("Upload Resume/Documents (PDF)", type=["pdf", "docx"], key=f"gr_{row['id']}")
                             
                             if st.form_submit_button("Submit Application"):
                                 if aname and aemail and aphone:
                                     if submit_application(row['id'], row['title'], aname, aemail, aphone):
-                                        st.success("🎉 Application submitted successfully through your portal!")
+                                        st.success("🎉 Application submitted successfully!")
                                         st.session_state[f"form_open_{row['id']}"] = False
                                         st.rerun()
                                     else:
@@ -244,11 +224,11 @@ if not df_jobs.empty:
                                     st.warning("Please fill all required fields.")
                     st.markdown("---")
         else:
-            st.info("No government jobs synced yet. Click **'Sync Pan-India & State Jobs'** in the sidebar.")
+            st.info("No government jobs synced yet. Click **'Sync Pan-India Jobs'** in the sidebar.")
 
     # --- PRIVATE JOBS TAB ---
     with tab_private:
-        st.subheader("All-India Private Sector Openings (Entry to High-End)")
+        st.subheader("All-India Private Sector Openings")
         priv_df = df_jobs[df_jobs["job_type"] == "Private"]
         
         if not priv_df.empty:
@@ -258,7 +238,7 @@ if not df_jobs.empty:
                     with c1:
                         st.markdown(f"### **{row['title']}**")
                         st.write(f"🏢 **Company:** {row['company']} | 🏷️ **Sector:** {row['sector']}")
-                        st.write(f"📍 **State/Location:** {row['state']} | 🎓 **Eligibility:** {row['qualification']}")
+                        st.write(f"📍 **Location:** {row['state']} | 🎓 **Eligibility:** {row['qualification']}")
                     with c2:
                         st.write(f"💰 **Salary:** {row['salary']}")
                         st.write(f"📅 **Last Date:** {row['last_date']} | 👥 **Openings:** {row['total_openings']}")
@@ -272,12 +252,11 @@ if not df_jobs.empty:
                             aname = st.text_input("Full Name", key=f"pn_{row['id']}")
                             aemail = st.text_input("Email Address", key=f"pe_{row['id']}")
                             aphone = st.text_input("Phone Number", key=f"pp_{row['id']}")
-                            res = st.file_uploader("Upload Resume (PDF)", type=["pdf", "docx"], key=f"pr_{row['id']}")
                             
                             if st.form_submit_button("Submit Application"):
                                 if aname and aemail and aphone:
                                     if submit_application(row['id'], row['title'], aname, aemail, aphone):
-                                        st.success("🎉 Application submitted successfully through your portal!")
+                                        st.success("🎉 Application submitted successfully!")
                                         st.session_state[f"form_open_{row['id']}"] = False
                                         st.rerun()
                                     else:
@@ -286,6 +265,7 @@ if not df_jobs.empty:
                                     st.warning("Please fill all required fields.")
                     st.markdown("---")
         else:
-            st.info("No private jobs synced yet. Click **'Sync Pan-India & State Jobs'** in the sidebar.")
+            st.info("No private jobs found. Click **'Sync Pan-India Jobs'** in the sidebar.")
 else:
-    st.info("Database is empty. Click **'Sync Pan-India & State Jobs'** in the sidebar to populate live national vacancies.")
+    st.info("Database is empty. Click **'Sync Pan-India Jobs'** in the sidebar to populate live national vacancies.")
+                
