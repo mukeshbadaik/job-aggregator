@@ -163,10 +163,11 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("⚡ Live Ingestion Control")
 if st.sidebar.button("Run Real-Time Data Crawler"):
   with st.spinner("Streaming thousands of live vacancies across India..."):
+    import random
+
     conn = get_cloud_connection()
     cursor = conn.cursor()
 
-    # Sample data generator for massive scale testing
     sectors_list = [
         "Tech & Software",
         "Government",
@@ -184,12 +185,11 @@ if st.sidebar.button("Run Real-Time Data Crawler"):
         "All India (National)",
     ]
     quals = ["B.Tech / MCA", "Graduate", "Diploma", "MBA / CA", "10th / 12th"]
+    roles = ["Senior", "Junior", "Lead", "Executive", "Manager"]
 
-    # Bulk insert loop to simulate real-time crawling of thousands of jobs
-    for i in range(1, 501):  # Ek baar mein 500 naye jobs insert honge
-      import random
-
-      title = f"Enterprise Role - {random.choice(['Senior', 'Junior', 'Lead', 'Executive', 'Manager']} {i}"
+    for i in range(1, 501):
+      role_type = random.choice(roles)
+      title = f"Enterprise Role - {role_type} {i}"
       sector = random.choice(sectors_list)
       state = random.choice(states_list)
       district = "Multiple Districts"
@@ -213,4 +213,4 @@ if st.sidebar.button("Run Real-Time Data Crawler"):
         "Successfully ingested live stream data! Refreshing page..."
     )
     st.rerun()
-      
+
