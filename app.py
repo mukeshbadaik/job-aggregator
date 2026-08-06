@@ -64,13 +64,15 @@ QUALIFICATION_LEVELS = [
 ]
 
 
-# Initialize Database with Start Date Column
+# Initialize Database with Auto-Migration for Missing Columns
 def init_db():
   import os
 
   os.makedirs("data", exist_ok=True)
   conn = sqlite3.connect(DB_PATH)
   cursor = conn.cursor()
+
+  # Create table if it doesn't exist
   cursor.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,7 +92,31 @@ def init_db():
     """)
   conn.commit()
 
-  # Insert master data with Start Date, Last Date, Links, etc.
+  # Check if any column is missing in an existing database and add it safely
+  cursor.execute("PRAGMA table_info(jobs)")
+  existing_columns = [col[1] for col in cursor.fetchall()]
+
+  required_columns = {
+      "job_title": "TEXT",
+      "company": "TEXT",
+      "qualification": "TEXT",
+      "certificate_needed": "TEXT",
+      "requirements": "TEXT",
+      "state": "TEXT",
+      "job_type": "TEXT",
+      "start_date": "TEXT",
+      "last_date": "TEXT",
+      "apply_link": "TEXT",
+      "source": "TEXT",
+      "location": "TEXT",
+  }
+
+  for col, col_type in required_columns.items():
+    if col not in existing_columns:
+      cursor.execute(f"ALTER TABLE jobs ADD COLUMN {col} {col_type}")
+  conn.commit()
+
+  # Insert master data if table is empty
   cursor.execute("SELECT COUNT(*) FROM jobs")
   if cursor.fetchone()[0] == 0:
     master_jobs = [
@@ -265,21 +291,22 @@ conn = sqlite3.connect(DB_PATH)
 df = pd.read_sql("SELECT * FROM jobs", conn)
 conn.close()
 
-# Apply Filters
-if job_category != "All Jobs":
-  df = df[df["job_type"] == job_category]
+# Apply Filters Safely
+if not df.empty and "job_type" in df.columns:
+  if job_category != "All Jobs":
+    df = df[df["job_type"] == job_category]
 
-if selected_state != "All India":
-  df = df[df["state"] == selected_state]
+  if selected_state != "All India":
+    df = df[df["state"] == selected_state]
 
-if selected_qualification != "All Qualifications":
-  df = df[df["qualification"] == selected_qualification]
+  if selected_qualification != "All Qualifications":
+    df = df[df["qualification"] == selected_qualification]
 
 # Global Search Bar
 search_query = st.text_input(
     "🔎 Search by Job, Company, Skill, or Location:"
 )
-if search_query:
+if search_query and not df.empty:
   df = df[
       df["job_title"].str.contains(search_query, case=False, na=False)
       | df["company"].str.contains(search_query, case=False, na=False)
@@ -290,14 +317,22 @@ if search_query:
 
 # Metrics
 c1, c2, c3 = st.columns(3)
-c1.metric("Matching Jobs Available", len(df))
+c1.metric("Matching Jobs Available", len(df) if not df.empty else 0)
 c2.metric(
     "Sarkari Openings",
-    len(df[df["job_type"] == "Sarkari"]) if not df.empty else 0,
+    (
+        len(df[df["job_type"] == "Sarkari"])
+        if not df.empty and "job_type" in df.columns
+        else 0
+    ),
 )
 c3.metric(
     "Private Openings",
-    len(df[df["job_type"] == "Private"]) if not df.empty else 0,
+    (
+        len(df[df["job_type"] == "Private"])
+        if not df.empty and "job_type" in df.columns
+        else 0
+    ),
 )
 
 st.markdown("---")
@@ -309,25 +344,25 @@ if not df.empty:
     with st.expander(f"📌 {row['job_title']} — {row['company']} ({row['state']})"):
       col_a, col_b = st.columns(2)
       with col_a:
-        st.write(f"**Sector / Type:** {row['job_type']}")
-        st.write(f"**Location:** {row['location']}")
-        st.write(f"**Qualification Required:** {row['qualification']}")
-        st.write(f"**Certificate Needed:** {row['certificate_needed']}")
+        st.write(f"**Sector / Type:** {row.get('job_type', 'N/A')}")
+        st.write(f"**Location:** {row.get('location', 'N/A')}")
+        st.write(f"**Qualification Required:** {row.get('qualification', 'N/A')}")
+        st.write(f"**Certificate Needed:** {row.get('certificate_needed', 'N/A')}")
       with col_b:
-        st.write(f"**Eligibility / Requirements:** {row['requirements']}")
-        st.write(f"**Start Date:** 🚀 {row['start_date']}")
-        st.write(f"**Last Date to Apply:** ⏰ {row['last_date']}")
-        st.write(f"**Source Platform:** {row['source']}")
+        st.write(f"**Eligibility / Requirements:** {row.get('requirements', 'N/A')}")
+        st.write(f"**Start Date:** 🚀 {row.get('start_date', 'N/A')}")
+        st.write(f"**Last Date to Apply:** ⏰ {row.get('last_date', 'N/A')}")
+        st.write(f"**Source Platform:** {row.get('source', 'N/A')}")
 
       # Direct Clickable Apply Link Button
       st.markdown(
           f"👉 **[Click Here to Apply / View Official Notice]"
-          f"({row['apply_link']})**",
+          f"({row.get('apply_link', '#')})**",
           unsafe_allow_html=True,
       )
 else:
   st.warning(
       "No listings match your selected combination. Try clearing filters or"
       " clicking 'Sync Live Vacancies'."
-    )
-          
+                                       )
+    
