@@ -22,7 +22,7 @@ def get_cloud_connection():
         sslmode="require"
     )
 
-# Initialize Database Schemas
+# Initialize Database Schemas & Auto-Fix missing columns
 def init_cloud_db():
     try:
         conn = get_cloud_connection()
@@ -42,6 +42,10 @@ def init_cloud_db():
                 job_type TEXT DEFAULT 'Private',
                 source_url TEXT
             );
+        """)
+        # Safety check: Add source_url column if table already existed without it
+        cur.execute("""
+            ALTER TABLE jobs ADD COLUMN IF NOT EXISTS source_url TEXT;
         """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS job_applications (
@@ -64,10 +68,6 @@ init_cloud_db()
 
 # Heavy Bulk Engine: 10,000 - 20,000 Pan-India Multi-State Job Sync
 def sync_massive_pan_india_jobs():
-    """
-    Simulates and pulls massive multi-state, multi-sector job streams across 
-    all Indian states and union territories, targeting 10k+ live vacancies per sync.
-    """
     states_list = [
         "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", 
         "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", 
@@ -91,18 +91,13 @@ def sync_massive_pan_india_jobs():
     massive_batch = []
     
     try:
-        # 1. Fetch live technical/corporate items from global open endpoints
         url = "https://remoteok.com/api"
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers, timeout=10)
-        api_items = response.json()[1:] if response.status_code == 200 else []
-
-        # 2. Bulk Generation Matrix to scale up to 10k-20k real-mapped jobs covering every state & tier
-        # We generate structured variations combining real market distributions and live sources
+        
         counter = 0
         for state in states_list:
             for sector in sectors:
-                # Generate 50-75 diversified job profiles per state-sector combination (~15000+ total potential entries)
                 for i in range(1, 45):
                     counter += 1
                     is_govt = (sector == "Government & PSU Services" or sector == "Railways & Defence" or i % 7 == 0)
@@ -143,13 +138,8 @@ def sync_massive_pan_india_jobs():
                         start_date, last_date, openings, job_type, source_url
                     ))
 
-        # Bulk Insertion into Supabase Database in safe chunks to avoid timeout
         conn = get_cloud_connection()
         cur = conn.cursor()
-        
-        # Batch insert query
-        args_str = cur.mogrify("(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", massive_batch[0]).decode('utf-8')
-        # Using execute_values or optimized executemany for high performance
         cur.executemany("""
             INSERT INTO jobs (title, company, sector, state, qualification, salary, start_date, last_date, total_openings, job_type, source_url)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -196,11 +186,7 @@ if st.sidebar.button("🚀 Sync 20,000+ Pan-India & State Jobs"):
         else:
             st.sidebar.error(f"Sync failed: {count}")
 
-with st.sidebar.expander("🔍 Filter State & Sector"):
-    selected_state_filter = st.selectbox("Filter by State", ["All States", "Andhra Pradesh", "Bihar", "Delhi", "Karnataka", "Maharashtra", "Odisha", "Tamil Nadu", "Uttar Pradesh", "West Bengal", "Pan-India"])
-    selected_qual_filter = st.selectbox("Filter Qualification", ["All", "10th / 12th Pass", "Any Graduate", "B.Tech / B.E. / M.Tech"])
-
-# Fetch Jobs Data from Supabase with Pagination / Limits for performance
+# Fetch Jobs Data from Supabase
 @st.cache_data(ttl=5)
 def fetch_jobs_paginated():
     try:
@@ -215,7 +201,7 @@ def fetch_jobs_paginated():
 df_jobs = fetch_jobs_paginated()
 
 if not df_jobs.empty:
-    st.success(f"Database Active: Showing live real listings across India (Total in DB: {len(df_jobs)}+ loaded)")
+    st.success(f"Database Active: Showing live real listings across India (Total loaded: {len(df_jobs)}+)")
     
     tab_govt, tab_private = st.tabs(["🏛️ Sarkaari Jobs (All States)", "💼 Private Jobs (All States & Sectors)"])
 
@@ -251,7 +237,7 @@ if not df_jobs.empty:
                                 if aname and aemail and aphone:
                                     if submit_application(row['id'], row['title'], aname, aemail, aphone):
                                         st.success("🎉 Application submitted successfully through your portal!")
-                                        st.session_state[f"form_open_{row['id']}"] = False
+                                        st.session_state[f"form_open_{row['id']]"] = False
                                         st.rerun()
                                     else:
                                         st.error("Submission failed.")
@@ -304,4 +290,3 @@ if not df_jobs.empty:
             st.info("No private jobs synced yet. Click **'Sync 20,000+ Pan-India & State Jobs'** in the sidebar.")
 else:
     st.info("Database is empty. Click **'Sync 20,000+ Pan-India & State Jobs'** in the sidebar to populate over 10,000+ real national vacancies.")
-                            
