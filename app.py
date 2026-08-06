@@ -5,12 +5,20 @@ import psycopg2
 import psycopg2.sql as sql
 import streamlit as st
 
-# --- CLOUD DATABASE CONFIGURATION (PostgreSQL / Supabase) ---
-DB_HOST = os.getenv("DB_HOST", "your-cloud-db-host.supabase.co")
-DB_NAME = os.getenv("DB_NAME", "postgres")
-DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "your-cloud-password")
-DB_PORT = os.getenv("DB_PORT", "5432")
+# --- CLOUD DATABASE CONFIGURATION (Supabase via Streamlit Secrets / Env) ---
+try:
+  DB_HOST = st.secrets["DB_HOST"]
+  DB_NAME = st.secrets["DB_NAME"]
+  DB_USER = st.secrets["DB_USER"]
+  DB_PASSWORD = st.secrets["DB_PASSWORD"]
+  DB_PORT = st.secrets.get("DB_PORT", "5432")
+except Exception:
+  # Fallback to environment variables if secrets are missing locally
+  DB_HOST = os.getenv("DB_HOST", "your-cloud-db-host.supabase.co")
+  DB_NAME = os.getenv("DB_NAME", "postgres")
+  DB_USER = os.getenv("DB_USER", "postgres")
+  DB_PASSWORD = os.getenv("DB_PASSWORD", "your-cloud-password")
+  DB_PORT = os.getenv("DB_PORT", "5432")
 
 
 def get_cloud_connection():
@@ -200,7 +208,6 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.subheader("⚡ Live Ingestion Control")
 
-# Slider to choose how many jobs to generate at once (Up to 10,000+)
 num_jobs_to_generate = st.sidebar.slider(
     "Select Batch Size for Ingestion",
     min_value=500,
@@ -244,7 +251,6 @@ if st.sidebar.button("Run Real-Time Data Crawler"):
     ]
     roles = ["Senior", "Junior", "Lead", "Executive", "Manager"]
 
-    # Bulk insertion using executemany for high performance
     batch_data = []
     for i in range(1, num_jobs_to_generate + 1):
       role_type = random.choice(roles)
