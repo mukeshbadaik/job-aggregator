@@ -64,7 +64,7 @@ QUALIFICATION_LEVELS = [
 ]
 
 
-# Initialize Database with Auto-Migration for Missing Columns
+# Initialize Database & Auto-Repair Corrupted/Blank Data
 def init_db():
   import os
 
@@ -72,7 +72,6 @@ def init_db():
   conn = sqlite3.connect(DB_PATH)
   cursor = conn.cursor()
 
-  # Create table if it doesn't exist
   cursor.execute("""
         CREATE TABLE IF NOT EXISTS jobs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,10 +91,9 @@ def init_db():
     """)
   conn.commit()
 
-  # Check if any column is missing in an existing database and add it safely
+  # Check columns
   cursor.execute("PRAGMA table_info(jobs)")
   existing_columns = [col[1] for col in cursor.fetchall()]
-
   required_columns = {
       "job_title": "TEXT",
       "company": "TEXT",
@@ -110,95 +108,139 @@ def init_db():
       "source": "TEXT",
       "location": "TEXT",
   }
-
   for col, col_type in required_columns.items():
     if col not in existing_columns:
       cursor.execute(f"ALTER TABLE jobs ADD COLUMN {col} {col_type}")
   conn.commit()
 
-  # Insert master data if table is empty
-  cursor.execute("SELECT COUNT(*) FROM jobs")
-  if cursor.fetchone()[0] == 0:
-    master_jobs = [
-        (
-            "Delivery Executive / Partner",
-            "Zomato / Blinkit",
-            "No Certificate / Open (Helper, Delivery, Labor)",
-            "None (Aadhaar Card & Driving License/Cycle)",
-            "Smartphone, Bank Account, Age 18+",
-            "All India",
-            "Private",
-            "2026-01-01",
-            "Open 365 Days",
-            "https://www.zomato.com/delivery",
-            "Direct Partner",
-            "Pan India",
-        ),
-        (
-            "Postal Gramin Dak Sevak (GDS)",
-            "India Post",
-            "10th Pass",
-            "10th Class Marksheet with Math & English",
-            "Basic computer knowledge, Cycling proficiency",
-            "All India",
-            "Sarkari",
-            "2026-06-01",
-            "2026-06-30",
-            "https://indiapostgdsonline.gov.in",
-            "India Post",
-            "All Districts",
-        ),
-        (
-            "Odisha Police Constable Recruitment",
-            "Odisha Police",
-            "12th Pass",
-            "12th Pass Certificate + Physical Fitness",
-            "Valid height, running test standards as per Odisha Police norms",
-            "Odisha",
-            "Sarkari",
-            "2026-06-10",
-            "2026-07-15",
-            "https://odishapolice.gov.in",
-            "Odisha Police",
-            "Multiple Districts",
-        ),
-        (
-            "ITI Electrician / Fitter Apprentice",
-            "NTPC Limited",
-            "Certificate / ITI / Diploma",
-            "ITI Certificate in Electrician/Fitter trade",
-            "NCVT/SCVT registration, Age 18-28 years",
-            "Odisha",
-            "Sarkari",
-            "2026-06-01",
-            "2026-06-25",
-            "https://ntpc.co.in",
-            "NTPC Portal",
-            "Talcher, Odisha",
-        ),
-        (
-            "Software Engineer - Python",
-            "Tech Mahindra",
-            "Professional / Technical (B.Tech, CA, MBBS)",
-            "B.Tech / MCA Degree",
-            "Strong knowledge of Python, Django, SQL",
-            "Karnataka",
-            "Private",
-            "2026-06-05",
-            "2026-07-10",
-            "https://www.techmahindra.com/careers",
-            "Naukri",
-            "Bangalore",
-        ),
-    ]
-    cursor.executemany(
-        """
-            INSERT INTO jobs (job_title, company, qualification, certificate_needed, requirements, state, job_type, start_date, last_date, apply_link, source, location)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        master_jobs,
-    )
-    conn.commit()
+  # Master Seed Data with proper values for Company, State, and Job Type
+  master_jobs = [
+      (
+          "UPSC Civil Services (IAS/IPS)",
+          "Union Public Service Commission",
+          "Graduate & Above",
+          "Graduation Degree in any stream",
+          "Age 21-32 years, Indian Citizen",
+          "All India",
+          "Sarkari",
+          "2026-02-01",
+          "2026-03-05",
+          "https://upsc.gov.in",
+          "UPSC Official",
+          "All India",
+      ),
+      (
+          "SBI Probationary Officer (PO)",
+          "State Bank of India",
+          "Graduate & Above",
+          "Graduation Degree from recognized University",
+          "Computer literacy, Age 21-30 years",
+          "All India",
+          "Sarkari",
+          "2026-06-10",
+          "2026-07-01",
+          "https://sbi.co.in/careers",
+          "SBI Portal",
+          "Pan India",
+      ),
+      (
+          "Postal Gramin Dak Sevak (GDS)",
+          "India Post",
+          "10th Pass",
+          "10th Class Marksheet with Math & English",
+          "Basic computer knowledge, Cycling proficiency",
+          "All India",
+          "Sarkari",
+          "2026-06-01",
+          "2026-06-30",
+          "https://indiapostgdsonline.gov.in",
+          "India Post",
+          "All Districts",
+      ),
+      (
+          "Odisha Police Constable Recruitment",
+          "Odisha Police",
+          "12th Pass",
+          "12th Pass Certificate + Physical Fitness",
+          "Valid height, running test standards",
+          "Odisha",
+          "Sarkari",
+          "2026-06-10",
+          "2026-07-15",
+          "https://odishapolice.gov.in",
+          "Odisha Police",
+          "Multiple Districts",
+      ),
+      (
+          "ITI Electrician Apprentice",
+          "NTPC Limited",
+          "Certificate / ITI / Diploma",
+          "ITI Certificate in Electrician trade",
+          "NCVT/SCVT registration, Age 18-28 years",
+          "Odisha",
+          "Sarkari",
+          "2026-06-01",
+          "2026-06-25",
+          "https://ntpc.co.in",
+          "NTPC Portal",
+          "Talcher, Odisha",
+      ),
+      (
+          "Software Engineer - Python",
+          "Tech Mahindra",
+          "Professional / Technical (B.Tech, CA, MBBS)",
+          "B.Tech / MCA Degree",
+          "Strong knowledge of Python, Django, SQL",
+          "Karnataka",
+          "Private",
+          "2026-06-05",
+          "2026-07-10",
+          "https://www.techmahindra.com/careers",
+          "Naukri",
+          "Bangalore",
+      ),
+      (
+          "Delivery Executive / Partner",
+          "Zomato / Blinkit",
+          "No Certificate / Open (Helper, Delivery, Labor)",
+          "Aadhaar Card & Driving License/Cycle",
+          "Smartphone, Bank Account, Age 18+",
+          "All India",
+          "Private",
+          "2026-01-01",
+          "Open 365 Days",
+          "https://www.zomato.com/delivery",
+          "Direct Partner",
+          "Pan India",
+      ),
+      (
+          "Data Analyst",
+          "Accenture",
+          "Graduate & Above",
+          "Bachelor's Degree in Stats/Engineering/Math",
+          "SQL, Excel, Tableau or PowerBI experience",
+          "Maharashtra",
+          "Private",
+          "2026-06-02",
+          "2026-06-30",
+          "https://www.accenture.com/careers",
+          "LinkedIn",
+          "Pune / Mumbai",
+      ),
+  ]
+
+  # Refresh table to clear old corrupted placeholder data completely
+  cursor.execute("DELETE FROM jobs")
+  conn.commit()
+
+  cursor.executemany(
+      """
+        INSERT INTO jobs (job_title, company, qualification, certificate_needed, requirements, state, job_type, start_date, last_date, apply_link, source, location)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+      master_jobs,
+  )
+  conn.commit()
   conn.close()
 
 
@@ -214,7 +256,7 @@ def fetch_and_add_live_jobs():
     )
     if response.status_code == 200:
       data = response.json().get("data", [])
-      for item in data[:8]:
+      for item in data[:5]:
         title = item.get("title", "Job Title")
         company = item.get("company_name", "Private Company")
         url = item.get("url", "https://www.arbeitnow.com")
@@ -316,24 +358,21 @@ if search_query and not df.empty:
   ]
 
 # Metrics
+sarkari_count = (
+    len(df[df["job_type"] == "Sarkari"])
+    if not df.empty and "job_type" in df.columns
+    else 0
+)
+private_count = (
+    len(df[df["job_type"] == "Private"])
+    if not df.empty and "job_type" in df.columns
+    else 0
+)
+
 c1, c2, c3 = st.columns(3)
 c1.metric("Matching Jobs Available", len(df) if not df.empty else 0)
-c2.metric(
-    "Sarkari Openings",
-    (
-        len(df[df["job_type"] == "Sarkari"])
-        if not df.empty and "job_type" in df.columns
-        else 0
-    ),
-)
-c3.metric(
-    "Private Openings",
-    (
-        len(df[df["job_type"] == "Private"])
-        if not df.empty and "job_type" in df.columns
-        else 0
-    ),
-)
+c2.metric("Sarkari Openings", sarkari_count)
+c3.metric("Private Openings", private_count)
 
 st.markdown("---")
 
@@ -341,7 +380,11 @@ st.markdown("---")
 if not df.empty:
   st.subheader("📋 Available Job Openings & Requirements")
   for idx, row in df.iterrows():
-    with st.expander(f"📌 {row['job_title']} — {row['company']} ({row['state']})"):
+    title = row.get("job_title", "Job Title")
+    company = row.get("company", "Company")
+    state = row.get("state", "All India")
+
+    with st.expander(f"📌 {title} — {company} ({state})"):
       col_a, col_b = st.columns(2)
       with col_a:
         st.write(f"**Sector / Type:** {row.get('job_type', 'N/A')}")
@@ -364,5 +407,4 @@ else:
   st.warning(
       "No listings match your selected combination. Try clearing filters or"
       " clicking 'Sync Live Vacancies'."
-                                       )
-    
+      )
