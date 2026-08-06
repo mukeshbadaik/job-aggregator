@@ -1,283 +1,141 @@
-from datetime import datetime
-import os
-import pandas as pd
-import psycopg2
-import psycopg2.sql as sql
 import streamlit as st
+import psycopg2
+import pandas as pd
+import random
+from datetime import datetime, timedelta
 
-# --- CLOUD DATABASE CONFIGURATION (Supabase via Streamlit Secrets / Env) ---
-try:
-  DB_HOST = st.secrets["DB_HOST"]
-  DB_NAME = st.secrets["DB_NAME"]
-  DB_USER = st.secrets["DB_USER"]
-  DB_PASSWORD = st.secrets["DB_PASSWORD"]
-  DB_PORT = st.secrets.get("DB_PORT", "5432")
-except Exception:
-  # Fallback to environment variables if secrets are missing locally
-  DB_HOST = os.getenv("DB_HOST", "your-cloud-db-host.supabase.co")
-  DB_NAME = os.getenv("DB_NAME", "postgres")
-  DB_USER = os.getenv("DB_USER", "postgres")
-  DB_PASSWORD = os.getenv("DB_PASSWORD", "your-cloud-password")
-  DB_PORT = os.getenv("DB_PORT", "5432")
+# Page Configuration
+st.set_page_config(
+    page_title="Pan-India Job Aggregator",
+    page_icon="🇮🇳",
+    layout="wide"
+)
 
-
+# 1. Centralized Cloud Database Connection
 def get_cloud_connection():
-  """Connects to high-performance cloud database capable of storing millions of rows"""
-  return psycopg2.connect(
-      host=DB_HOST,
-      database=DB_NAME,
-      user=DB_USER,
-      password=DB_PASSWORD,
-      port=DB_PORT,
-  )
-
-
-def init_cloud_db():
-  conn = get_cloud_connection()
-  cursor = conn.cursor()
-
-  # Universal schema optimized for millions of rows across India
-  cursor.execute("""
-        CREATE TABLE IF NOT EXISTS pan_india_jobs (
-            id SERIAL PRIMARY KEY,
-            title TEXT,
-            sector TEXT,
-            state TEXT,
-            district TEXT,
-            qualification TEXT,
-            deadline TEXT,
-            link TEXT,
-            source TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-  conn.commit()
-  cursor.close()
-  conn.close()
-
-
-# --- UNLIMITED STREAMLING INGESTION ENGINE ---
-def stream_unlimited_vouchers():
-  conn = get_cloud_connection()
-  cursor = conn.cursor()
-
-  # Check total records in cloud database
-  cursor.execute("SELECT COUNT(*) FROM pan_india_jobs")
-  count = cursor.fetchone()[0]
-
-  if count == 0:
-    sample_batch = [
-        (
-            "Central Government UPSC Civil Services",
-            "Government",
-            "All India (National)",
-            "Multiple Districts",
-            "Graduate",
-            "2026-12-31",
-            "https://example.com/apply",
-            "Automated Crawler Stream #101",
-        ),
-        (
-            "Pan-India Tech MNC Software Engineer",
-            "Tech & Software",
-            "Karnataka (Bengaluru)",
-            "Multiple Districts",
-            "B.Tech / MCA",
-            "2026-12-31",
-            "https://example.com/apply",
-            "Automated Crawler Stream #102",
-        ),
-        (
-            "State Bank of India Junior Associate",
-            "Banking & Finance",
-            "Maharashtra (Mumbai)",
-            "Multiple Districts",
-            "Graduate",
-            "2026-12-31",
-            "https://example.com/apply",
-            "Automated Crawler Stream #103",
-        ),
-    ]
-
-    cursor.executemany(
-        """
-            INSERT INTO pan_india_jobs (title, sector, state, district, qualification, deadline, link, source)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """,
-        sample_batch,
+    return psycopg2.connect(
+        host=st.secrets["DB_HOST"],
+        database=st.secrets["DB_NAME"],
+        user=st.secrets["DB_USER"],
+        password=st.secrets["DB_PASSWORD"],
+        port=st.secrets["DB_PORT"],
+        sslmode="require"
     )
-    conn.commit()
 
-  cursor.close()
-  conn.close()
-
+# 2. Initialize Database Schema
+def init_cloud_db():
+    try:
+        conn = get_cloud_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS pan_india_jobs (
+                id SERIAL PRIMARY KEY,
+                job_title TEXT,
+                company TEXT,
+                sector TEXT,
+                state TEXT,
+                qualification TEXT,
+                salary TEXT,
+                posted_date DATE
+            );
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        st.error(f"Database Connection Error: {e}")
 
 init_cloud_db()
-stream_unlimited_vouchers()
 
-# --- STREAMLIT FRONTEND UI ---
-st.set_page_config(
-    page_title="Pan-India Job Aggregator - Enterprise Cloud Edition"
-)
+# 3. Dummy Data Generators for Batch Ingestion
+SECTORS = ["Information Technology", "Manufacturing", "Banking & Finance", "Healthcare", "Retail", "EdTech", "Logistics"]
+STATES = ["Maharashtra", "Karnataka", "Delhi NCR", "Tamil Nadu", "Telangana", "Gujarat", "Uttar Pradesh", "West Bengal"]
+QUALIFICATIONS = ["B.Tech / B.E.", "MBA / PGDM", "B.Sc / M.Sc", "Diploma", "B.Com / M.Com", "Any Graduate", "12th Pass"]
+TITLES = ["Software Engineer", "Data Analyst", "Operations Manager", "HR Executive", "Business Development Manager", "Cloud Architect", "Customer Support Specialist"]
+COMPANIES = ["TCS", "Infosys", "Reliance Industries", "Wipro", "HDFC Bank", "Tata Motors", "Flipkart", "Zomato", "Airtel"]
 
-st.title("🚀 Pan-India Real-Time Job Aggregator (Enterprise Scale)")
-st.markdown(
-    "Connected to Cloud Database: Streaming unlimited live vacancies across"
-    " India."
-)
+def generate_job_batch(batch_size):
+    data = []
+    for _ in range(batch_size):
+        title = random.choice(TITLES)
+        company = random.choice(COMPANIES)
+        sector = random.choice(SECTORS)
+        state = random.choice(STATES)
+        qual = random.choice(QUALIFICATIONS)
+        salary = f"₹{random.randint(3, 25)} LPA"
+        posted_date = datetime.now().date() - timedelta(days=random.randint(0, 30))
+        data.append((title, company, sector, state, qual, salary, posted_date))
+    return data
 
-# Sidebar Filters & Search
-st.sidebar.header("🔍 Global Search & Filter")
-
-conn = get_cloud_connection()
-df = pd.read_sql("SELECT * FROM pan_india_jobs", conn)
-conn.close()
-
-search_query = st.sidebar.text_input("Search Job Title, Keyword, or Skill")
-
-sectors = ["All"] + list(df["sector"].unique()) if not df.empty else ["All"]
-selected_sector = st.sidebar.selectbox("Select Sector", sectors)
-
-states = ["All"] + sorted(list(df["state"].unique())) if not df.empty else ["All"]
-selected_state = st.sidebar.selectbox("Select State / Region", states)
-
-qualifications = (
-    ["All"] + list(df["qualification"].unique()) if not df.empty else ["All"]
-)
-selected_qual = st.sidebar.selectbox("Select Qualification", qualifications)
-
-# Apply Filters
-filtered_df = df.copy()
-if not filtered_df.empty:
-  if search_query:
-    filtered_df = filtered_df[
-        filtered_df["title"].str.contains(search_query, case=False, na=False)
-    ]
-  if selected_sector != "All":
-    filtered_df = filtered_df[filtered_df["sector"] == selected_sector]
-  if selected_state != "All":
-    filtered_df = filtered_df[filtered_df["state"] == selected_state]
-  if selected_qual != "All":
-    filtered_df = filtered_df[filtered_df["qualification"] == selected_qual]
-
-# Display Metrics
-total_count_display = (
-    f"{len(filtered_df):,}" if not filtered_df.empty else "0"
-)
-st.metric(
-    label="Total Active Live Openings in Cloud Sync", value=total_count_display
-)
-st.markdown("---")
-
-# High-Performance Infinite Scrolling / Pagination
-page_size = 30
-total_pages = (
-    max(1, len(filtered_df) // page_size) if not filtered_df.empty else 1
-)
-page_number = st.sidebar.number_input(
-    "Page Number", min_value=1, max_value=int(total_pages), value=1
-)
-
-if not filtered_df.empty:
-  start_idx = (page_number - 1) * page_size
-  end_idx = start_idx + page_size
-  paginated_df = filtered_df.iloc[start_idx:end_idx]
-
-  st.write(f"Showing page **{page_number}** of **{total_pages:,}**")
-
-  for index, row in paginated_df.iterrows():
-    with st.container():
-      col1, col2 = st.columns([4, 1])
-      with col1:
-        st.subheader(row["title"])
-        st.write(
-            f"**Sector:** {row['sector']} | **State:** {row['state']} |"
-            f" **District:** {row['district']}"
-        )
-        st.caption(
-            f"📅 Deadline: {row['deadline']} | 🔗 Source: {row['source']}"
-        )
-      with col2:
-        st.write("")
-        st.link_button("Apply Now 🔗", row["link"])
-      st.markdown("---")
-else:
-  st.info("No records found in cloud database.")
-
-# --- SIDEBAR CONTROL FOR INGESTION ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("⚡ Live Ingestion Control")
-
-num_jobs_to_generate = st.sidebar.slider(
-    "Select Batch Size for Ingestion",
-    min_value=500,
-    max_value=10000,
-    step=500,
-    value=2000,
-)
-
-if st.sidebar.button("Run Real-Time Data Crawler"):
-  with st.spinner(
-      f"Streaming {num_jobs_to_generate:,} live vacancies across India into"
-      " Cloud..."
-  ):
-    import random
-
+def insert_jobs_to_db(records):
     conn = get_cloud_connection()
-    cursor = conn.cursor()
-
-    sectors_list = [
-        "Tech & Software",
-        "Government",
-        "Banking & Finance",
-        "Healthcare",
-        "Core Engineering",
-        "EdTech",
-    ]
-    states_list = [
-        "Maharashtra (Mumbai)",
-        "Karnataka (Bengaluru)",
-        "Delhi (NCR)",
-        "Telangana (Hyderabad)",
-        "Tamil Nadu (Chennai)",
-        "All India (National)",
-    ]
-    quals = [
-        "B.Tech / MCA",
-        "Graduate",
-        "Diploma",
-        "MBA / CA",
-        "10th / 12th",
-    ]
-    roles = ["Senior", "Junior", "Lead", "Executive", "Manager"]
-
-    batch_data = []
-    for i in range(1, num_jobs_to_generate + 1):
-      role_type = random.choice(roles)
-      title = f"Enterprise Role - {role_type} {random.randint(1000, 99999)}"
-      sector = random.choice(sectors_list)
-      state = random.choice(states_list)
-      district = "Multiple Districts"
-      qual = random.choice(quals)
-      deadline = "2026-12-31"
-      link = "https://example.com/apply"
-      source = f"Automated Crawler Stream #{random.randint(100, 999)}"
-      batch_data.append(
-          (title, sector, state, district, qual, deadline, link, source)
-      )
-
-    cursor.executemany(
-        """
-            INSERT INTO pan_india_jobs (title, sector, state, district, qualification, deadline, link, source)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """,
-        batch_data,
-    )
-
+    cur = conn.cursor()
+    cur.executemany("""
+        INSERT INTO pan_india_jobs (job_title, company, sector, state, qualification, salary, posted_date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+    """, records)
     conn.commit()
-    cursor.close()
+    cur.close()
     conn.close()
-    st.sidebar.success(
-        f"Successfully ingested {num_jobs_to_generate:,} jobs! Refreshing..."
-    )
-    st.rerun()
+
+# 4. Frontend UI Layout
+st.title("🇮🇳 Pan-India Enterprise Job Aggregator")
+st.markdown("Real-time scalable job portal connected securely to Supabase PostgreSQL.")
+
+# Sidebar Controls for Live Ingestion
+st.sidebar.header("🚀 Live Ingestion Control")
+batch_count = st.sidebar.selectbox("Select Batch Size", [500, 1000, 5000, 10000])
+if st.sidebar.button("Simulate & Insert Batch"):
+    with st.spinner(f"Generating and inserting {batch_count} records..."):
+        batch_data = generate_job_batch(batch_count)
+        insert_jobs_to_db(batch_data)
+        st.sidebar.success(f"Successfully added {batch_count} jobs!")
+        st.rerun()
+
+# Fetch Data for Filters & Display
+@st.cache_data(ttl=60)
+def fetch_jobs():
+    try:
+        conn = get_cloud_connection()
+        query = "SELECT job_title, company, sector, state, qualification, salary, posted_date FROM pan_india_jobs ORDER BY posted_date DESC;"
+        df = pd.read_sql(query, conn)
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+df_jobs = fetch_jobs()
+
+if not df_jobs.empty:
+    st.sidebar.markdown("---")
+    st.sidebar.header("🔍 Filter Jobs")
+    
+    selected_state = st.sidebar.selectbox("Filter by State", ["All"] + list(df_jobs["state"].unique()))
+    selected_sector = st.sidebar.selectbox("Filter by Sector", ["All"] + list(df_jobs["sector"].unique()))
+    selected_qual = st.sidebar.selectbox("Filter by Qualification", ["All"] + list(df_jobs["qualification"].unique()))
+
+    # Apply Filters
+    filtered_df = df_jobs.copy()
+    if selected_state != "All":
+        filtered_df = filtered_df[filtered_df["state"] == selected_state]
+    if selected_sector != "All":
+        filtered_df = filtered_df[filtered_df["sector"] == selected_sector]
+    if selected_qual != "All":
+        filtered_df = filtered_df[filtered_df["qualification"] == selected_qual]
+
+    st.subheader(f"Available Openings ({len(filtered_df)} jobs found)")
+
+    # Pagination Logic (30 results per page)
+    items_per_page = 30
+    total_pages = max(1, (len(filtered_df) + items_per_page - 1) // items_per_page)
+    
+    page = st.number_input("Page", min_value=1, max_value=total_pages, step=1)
+    start_idx = (page - 1) * items_per_page
+    end_idx = start_idx + items_per_page
+
+    paginated_df = filtered_df.iloc[start_idx:end_idx]
+
+    # Render Table
+    st.dataframe(paginated_df, use_container_width=True)
+else:
+    st.info("Database is currently empty. Use the sidebar **Live Ingestion Control** to inject sample jobs.")
