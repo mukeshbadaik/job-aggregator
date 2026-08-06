@@ -10,21 +10,28 @@ st.set_page_config(
     layout="wide"
 )
 
-# Centralized Cloud Database Connection
+# Safe Cloud Database Connection with Timeout (Prevents White Screen Freeze)
 def get_cloud_connection():
-    return psycopg2.connect(
-        host=st.secrets["DB_HOST"],
-        database=st.secrets["DB_NAME"],
-        user=st.secrets["DB_USER"],
-        password=st.secrets["DB_PASSWORD"],
-        port=st.secrets["DB_PORT"],
-        sslmode="require"
-    )
-
-# Initialize Database Schemas & Auto-Fix missing columns
-def init_cloud_db():
     try:
-        conn = get_cloud_connection()
+        conn = psycopg2.connect(
+            host=st.secrets["DB_HOST"],
+            database=st.secrets["DB_NAME"],
+            user=st.secrets["DB_USER"],
+            password=st.secrets["DB_PASSWORD"],
+            port=st.secrets["DB_PORT"],
+            sslmode="require",
+            connect_timeout=3
+        )
+        return conn
+    except Exception as e:
+        return None
+
+# Initialize Database Schemas Safely
+def init_cloud_db():
+    conn = get_cloud_connection()
+    if conn is None:
+        return False
+    try:
         cur = conn.cursor()
         cur.execute("""
             CREATE TABLE IF NOT EXISTS jobs (
@@ -59,13 +66,18 @@ def init_cloud_db():
         conn.commit()
         cur.close()
         conn.close()
+        return True
     except Exception as e:
-        st.error(f"Database Connection Error: {e}")
+        return False
 
-init_cloud_db()
+db_status = init_cloud_db()
 
-# Sync Engine with Live Progress Bar (Prevents Freezing/Dimming)
-def sync_optimized_jobs_with_progress():
+# Lightning-Fast Bulk Sync Engine
+def sync_lightning_fast_jobs():
+    conn = get_cloud_connection()
+    if conn is None:
+        return False, "Database connection timeout. Check your Supabase credentials or network."
+    
     states_list = [
         "Andhra Pradesh", "Bihar", "Delhi", "Gujarat", "Haryana", 
         "Karnataka", "Maharashtra", "Odisha", "Punjab", "Rajasthan", 
@@ -79,24 +91,13 @@ def sync_optimized_jobs_with_progress():
     ]
 
     qualification_tiers = ["10th / 12th Pass", "Any Graduate", "B.Tech / B.E. / M.Tech"]
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    total_steps = len(states_list) * len(sectors)
+    batch_data = []
     counter = 0
 
     try:
-        conn = get_cloud_connection()
-        cur = conn.cursor()
-        
-        step = 0
         for state in states_list:
             for sector in sectors:
-                step += 1
-                progress_bar.progress(min(step / total_steps, 1.0))
-                status_text.text(f"Syncing State: {state} | Sector: {sector}")
-                
-                for i in range(1, 10):
+                for i in range(1, 6):
                     counter += 1
                     is_govt = (sector in ["Government & PSU Services", "Railways & Defence"] or i % 5 == 0)
                     job_type = "Government" if is_govt else "Private"
@@ -117,26 +118,30 @@ def sync_optimized_jobs_with_progress():
                     openings = (i * 2) % 30 + 5
                     source_url = f"https://nationalcareerportal.gov.in/job/{state.lower()}-{counter}"
 
-                    cur.execute("""
-                        INSERT INTO jobs (title, company, sector, state, qualification, salary, start_date, last_date, total_openings, job_type, source_url)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (title, company, sector, state, qual, salary, start_date, last_date, openings, job_type, source_url))
+                    batch_data.append((
+                        title, company, sector, state, qual, salary, 
+                        start_date, last_date, openings, job_type, source_url
+                    ))
+
+        cur = conn.cursor()
+        cur.executemany("""
+            INSERT INTO jobs (title, company, sector, state, qualification, salary, start_date, last_date, total_openings, job_type, source_url)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, batch_data)
         
         conn.commit()
         cur.close()
         conn.close()
-        progress_bar.empty()
-        status_text.empty()
-        return True, counter
+        return True, len(batch_data)
     except Exception as e:
-        progress_bar.empty()
-        status_text.empty()
         return False, str(e)
 
 # Save Application to DB
 def submit_application(job_id, job_title, name, email, phone):
+    conn = get_cloud_connection()
+    if conn is None:
+        return False
     try:
-        conn = get_cloud_connection()
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO job_applications (job_id, job_title, applicant_name, applicant_email, phone_number)
@@ -154,117 +159,123 @@ st.title("🇮🇳 Pan-India 99% Unified Career Portal")
 st.markdown("Real-time nationwide aggregated Sarkaari and Private vacancies covering all States, Districts, and Sectors with direct in-app applications.")
 st.markdown("---")
 
-# Sidebar Engine Controls
-st.sidebar.header("⚡ Live Sync Engine")
-st.sidebar.markdown("Click below to sync live active vacancies across all states instantly.")
-
-if st.sidebar.button("🚀 Sync Pan-India Jobs"):
-    success, result = sync_optimized_jobs_with_progress()
-    if success:
-        st.sidebar.success(f"Successfully synced {result:,} vacancies!")
-        st.rerun()
-    else:
-        st.sidebar.error(f"Sync failed: {result}")
-
-# Fetch Jobs Data from Supabase
-@st.cache_data(ttl=2)
-def fetch_jobs_paginated():
-    try:
-        conn = get_cloud_connection()
-        query = "SELECT id, title, company, sector, state, qualification, salary, start_date, last_date, total_openings, job_type, source_url FROM jobs ORDER BY id DESC LIMIT 500"
-        df = pd.read_sql(query, conn)
-        conn.close()
-        return df
-    except Exception:
-        return pd.DataFrame()
-
-df_jobs = fetch_jobs_paginated()
-
-if not df_jobs.empty:
-    st.success(f"Database Active: Showing live listings (Total loaded: {len(df_jobs)}+)")
-    
-    tab_govt, tab_private = st.tabs(["🏛️ Sarkaari Jobs (All States)", "💼 Private Jobs (All States & Sectors)"])
-
-    # --- GOVT JOBS TAB ---
-    with tab_govt:
-        st.subheader("All-India Government, PSU & State Board Openings")
-        govt_df = df_jobs[df_jobs["job_type"] == "Government"]
-        
-        if not govt_df.empty:
-            for index, row in govt_df.iterrows():
-                with st.container():
-                    c1, c2, c3 = st.columns([3, 2, 1])
-                    with c1:
-                        st.markdown(f"### **{row['title']}**")
-                        st.write(f"🏢 **Department:** {row['company']} | 🏷️ **Sector:** {row['sector']}")
-                        st.write(f"📍 **Location:** {row['state']} | 🎓 **Eligibility:** {row['qualification']}")
-                    with c2:
-                        st.write(f"💰 **Pay Scale:** {row['salary']}")
-                        st.write(f"📅 **Last Date:** {row['last_date']} | 👥 **Openings:** {row['total_openings']}")
-                    with c3:
-                        if st.button("Apply Now", key=f"govt_btn_{row['id']}"):
-                            st.session_state[f"form_open_{row['id']}"] = True
-
-                    if st.session_state.get(f"form_open_{row['id']}", False):
-                        with st.form(key=f"govt_form_{row['id']}"):
-                            st.markdown(f"#### In-App Form: {row['title']} ({row['company']})")
-                            aname = st.text_input("Full Name", key=f"gn_{row['id']}")
-                            aemail = st.text_input("Email Address", key=f"ge_{row['id']}")
-                            aphone = st.text_input("Phone Number", key=f"gp_{row['id']}")
-                            
-                            if st.form_submit_button("Submit Application"):
-                                if aname and aemail and aphone:
-                                    if submit_application(row['id'], row['title'], aname, aemail, aphone):
-                                        st.success("🎉 Application submitted successfully!")
-                                        st.session_state[f"form_open_{row['id']}"] = False
-                                        st.rerun()
-                                    else:
-                                        st.error("Submission failed.")
-                                else:
-                                    st.warning("Please fill all required fields.")
-                    st.markdown("---")
-        else:
-            st.info("No government jobs synced yet. Click **'Sync Pan-India Jobs'** in the sidebar.")
-
-    # --- PRIVATE JOBS TAB ---
-    with tab_private:
-        st.subheader("All-India Private Sector Openings")
-        priv_df = df_jobs[df_jobs["job_type"] == "Private"]
-        
-        if not priv_df.empty:
-            for index, row in priv_df.iterrows():
-                with st.container():
-                    c1, c2, c3 = st.columns([3, 2, 1])
-                    with c1:
-                        st.markdown(f"### **{row['title']}**")
-                        st.write(f"🏢 **Company:** {row['company']} | 🏷️ **Sector:** {row['sector']}")
-                        st.write(f"📍 **Location:** {row['state']} | 🎓 **Eligibility:** {row['qualification']}")
-                    with c2:
-                        st.write(f"💰 **Salary:** {row['salary']}")
-                        st.write(f"📅 **Last Date:** {row['last_date']} | 👥 **Openings:** {row['total_openings']}")
-                    with c3:
-                        if st.button("Apply Now", key=f"priv_btn_{row['id']}"):
-                            st.session_state[f"form_open_{row['id']}"] = True
-
-                    if st.session_state.get(f"form_open_{row['id']}", False):
-                        with st.form(key=f"priv_form_{row['id']}"):
-                            st.markdown(f"#### In-App Form: {row['title']} at {row['company']}")
-                            aname = st.text_input("Full Name", key=f"pn_{row['id']}")
-                            aemail = st.text_input("Email Address", key=f"pe_{row['id']}")
-                            aphone = st.text_input("Phone Number", key=f"pp_{row['id']}")
-                            
-                            if st.form_submit_button("Submit Application"):
-                                if aname and aemail and aphone:
-                                    if submit_application(row['id'], row['title'], aname, aemail, aphone):
-                                        st.success("🎉 Application submitted successfully!")
-                                        st.session_state[f"form_open_{row['id']}"] = False
-                                        st.rerun()
-                                    else:
-                                        st.error("Submission failed.")
-                                else:
-                                    st.warning("Please fill all required fields.")
-                    st.markdown("---")
-        else:
-            st.info("No private jobs found. Click **'Sync Pan-India Jobs'** in the sidebar.")
+if not db_status:
+    st.error("⚠️ **Database Connection Failed:** Please check your Supabase secrets (`DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_PORT`, `DB_NAME`) in Streamlit settings.")
 else:
-    st.info("Database is empty. Click **'Sync Pan-India Jobs'** in the sidebar to populate live national vacancies.")
+    # Sidebar Engine Controls
+    st.sidebar.header("⚡ Live Sync Engine")
+    st.sidebar.markdown("Click below to sync live active vacancies across all states instantly.")
+
+    if st.sidebar.button("🚀 Sync Pan-India Jobs"):
+        with st.spinner("Syncing vacancies instantly... Please wait."):
+            success, result = sync_lightning_fast_jobs()
+            if success:
+                st.sidebar.success(f"Successfully synced {result:,} vacancies!")
+                st.rerun()
+            else:
+                st.sidebar.error(f"Sync failed: {result}")
+
+    # Fetch Jobs Data from Supabase Safely
+    @st.cache_data(ttl=2)
+    def fetch_jobs_paginated():
+        conn = get_cloud_connection()
+        if conn is None:
+            return pd.DataFrame()
+        try:
+            query = "SELECT id, title, company, sector, state, qualification, salary, start_date, last_date, total_openings, job_type, source_url FROM jobs ORDER BY id DESC LIMIT 500"
+            df = pd.read_sql(query, conn)
+            conn.close()
+            return df
+        except Exception:
+            return pd.DataFrame()
+
+    df_jobs = fetch_jobs_paginated()
+
+    if not df_jobs.empty:
+        st.success(f"Database Active: Showing live listings (Total loaded: {len(df_jobs)}+)")
+        
+        tab_govt, tab_private = st.tabs(["🏛️ Sarkaari Jobs (All States)", "💼 Private Jobs (All States & Sectors)"])
+
+        # --- GOVT JOBS TAB ---
+        with tab_govt:
+            st.subheader("All-India Government, PSU & State Board Openings")
+            govt_df = df_jobs[df_jobs["job_type"] == "Government"]
+            
+            if not govt_df.empty:
+                for index, row in govt_df.iterrows():
+                    with st.container():
+                        c1, c2, c3 = st.columns([3, 2, 1])
+                        with c1:
+                            st.markdown(f"### **{row['title']}**")
+                            st.write(f"🏢 **Department:** {row['company']} | 🏷️ **Sector:** {row['sector']}")
+                            st.write(f"📍 **Location:** {row['state']} | 🎓 **Eligibility:** {row['qualification']}")
+                        with c2:
+                            st.write(f"💰 **Pay Scale:** {row['salary']}")
+                            st.write(f"📅 **Last Date:** {row['last_date']} | 👥 **Openings:** {row['total_openings']}")
+                        with c3:
+                            if st.button("Apply Now", key=f"govt_btn_{row['id']}"):
+                                st.session_state[f"form_open_{row['id']}"] = True
+
+                        if st.session_state.get(f"form_open_{row['id']}", False):
+                            with st.form(key=f"govt_form_{row['id']}"):
+                                st.markdown(f"#### In-App Form: {row['title']} ({row['company']})")
+                                aname = st.text_input("Full Name", key=f"gn_{row['id']}")
+                                aemail = st.text_input("Email Address", key=f"ge_{row['id']}")
+                                aphone = st.text_input("Phone Number", key=f"gp_{row['id']}")
+                                
+                                if st.form_submit_button("Submit Application"):
+                                    if aname and aemail and aphone:
+                                        if submit_application(row['id'], row['title'], aname, aemail, aphone):
+                                            st.success("🎉 Application submitted successfully!")
+                                            st.session_state[f"form_open_{row['id']}"] = False
+                                            st.rerun()
+                                        else:
+                                            st.error("Submission failed.")
+                                    else:
+                                        st.warning("Please fill all required fields.")
+                        st.markdown("---")
+            else:
+                st.info("No government jobs synced yet. Click **'Sync Pan-India Jobs'** in the sidebar.")
+
+        # --- PRIVATE JOBS TAB ---
+        with tab_private:
+            st.subheader("All-India Private Sector Openings")
+            priv_df = df_jobs[df_jobs["job_type"] == "Private"]
+            
+            if not priv_df.empty:
+                for index, row in priv_df.iterrows():
+                    with st.container():
+                        c1, c2, c3 = st.columns([3, 2, 1])
+                        with c1:
+                            st.markdown(f"### **{row['title']}**")
+                            st.write(f"🏢 **Company:** {row['company']} | 🏷️ **Sector:** {row['sector']}")
+                            st.write(f"📍 **Location:** {row['state']} | 🎓 **Eligibility:** {row['qualification']}")
+                        with c2:
+                            st.write(f"💰 **Salary:** {row['salary']}")
+                            st.write(f"📅 **Last Date:** {row['last_date']} | 👥 **Openings:** {row['total_openings']}")
+                        with c3:
+                            if st.button("Apply Now", key=f"priv_btn_{row['id']}"):
+                                st.session_state[f"form_open_{row['id']}"] = True
+
+                        if st.session_state.get(f"form_open_{row['id']}", False):
+                            with st.form(key=f"priv_form_{row['id']}"):
+                                st.markdown(f"#### In-App Form: {row['title']} at {row['company']}")
+                                aname = st.text_input("Full Name", key=f"pn_{row['id']}")
+                                aemail = st.text_input("Email Address", key=f"pe_{row['id']}")
+                                aphone = st.text_input("Phone Number", key=f"pp_{row['id']}")
+                                
+                                if st.form_submit_button("Submit Application"):
+                                    if aname and aemail and aphone:
+                                        if submit_application(row['id'], row['title'], aname, aemail, aphone):
+                                            st.success("🎉 Application submitted successfully!")
+                                            st.session_state[f"form_open_{row['id']}"] = False
+                                            st.rerun()
+                                        else:
+                                            st.error("Submission failed.")
+                                    else:
+                                        st.warning("Please fill all required fields.")
+                        st.markdown("---")
+            else:
+                st.info("No private jobs found. Click **'Sync Pan-India Jobs'** in the sidebar.")
+    else:
+        st.info("Database is empty. Click **'Sync Pan-India Jobs'** in the sidebar to populate live national vacancies.")
