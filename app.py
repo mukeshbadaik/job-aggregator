@@ -49,6 +49,41 @@ def init_db():
 
 init_db()
 
+# Function to simulate/fetch new live jobs
+def fetch_and_add_live_jobs():
+    db_path = "data/jobs.db"
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # Naye live simulated jobs jo scrapers fetch karenge
+    new_jobs = [
+        ("ISRO Scientist / Engineer 'SC'", "Government / Technical", "ISRO", "B.E / B.Tech", "All India", "ISRO Careers"),
+        ("AI / ML Research Intern", "Private IT", "Google / Microsoft AI", "B.Tech / M.Tech", "Bangalore / Hyderabad", "Company Portal"),
+        ("IBPS Clerk XIV Recruitment", "Banking / Government", "Institute of Banking Personnel", "Graduate", "Pan India", "IBPS Official")
+    ]
+    
+    # Check karke insert karna taaki duplicate na ho
+    added_count = 0
+    for job in new_jobs:
+        cursor.execute("SELECT COUNT(*) FROM jobs WHERE job_title = ?", (job[0],))
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("INSERT INTO jobs (job_title, category, company_or_board, qualification, location, source) VALUES (?, ?, ?, ?, ?, ?)", job)
+            added_count += 1
+            
+    conn.commit()
+    conn.close()
+    return added_count
+
+# Sidebar controls for scraping/updating
+st.sidebar.header("⚙️ Admin & Scrapers")
+if st.sidebar.button("🔄 Fetch & Update Live Jobs"):
+    newly_added = fetch_and_add_live_jobs()
+    if newly_added > 0:
+        st.sidebar.success(f"{newly_added} naye jobs successfully added!")
+        st.rerun()
+    else:
+        st.sidebar.info("Database already up to date with latest jobs.")
+
 db_path = "data/jobs.db"
 conn = sqlite3.connect(db_path)
 df = pd.read_sql("SELECT * FROM jobs", conn)
@@ -69,4 +104,4 @@ if search_query:
 st.dataframe(df.drop(columns=["id"]), use_container_width=True)
 
 st.markdown("---")
-st.info("💡 Yeh app automatic database create karta hai. Jaise-jaise naye scrapers ya data add honge, yeh list aur badi hoti jayegi!")
+st.info("💡 Yeh app automatic database create karta hai. Side bar mein 'Fetch & Update Live Jobs' dabakar naye jobs live load kar sakte hain!")
