@@ -1,10 +1,13 @@
 import sqlite3
 import pandas as pd
+import requests
 import streamlit as st
 
 # Page Configuration
 st.set_page_config(
-    page_title="India Job Aggregator Dashboard", page_icon="🇮🇳", layout="wide"
+    page_title="India Master Job Aggregator Dashboard",
+    page_icon="🇮🇳",
+    layout="wide",
 )
 
 DB_PATH = "data/jobs.db"
@@ -50,8 +53,18 @@ INDIAN_STATES = [
     "Puducherry",
 ]
 
+QUALIFICATION_LEVELS = [
+    "All Qualifications",
+    "No Certificate / Open (Helper, Delivery, Labor)",
+    "10th Pass",
+    "12th Pass",
+    "Certificate / ITI / Diploma",
+    "Graduate & Above",
+    "Professional / Technical (B.Tech, CA, MBBS)",
+]
 
-# Initialize Database and Table with State & Job Type
+
+# Initialize Database with Start Date Column
 def init_db():
   import os
 
@@ -64,176 +77,152 @@ def init_db():
             job_title TEXT,
             company TEXT,
             qualification TEXT,
+            certificate_needed TEXT,
+            requirements TEXT,
             state TEXT,
             job_type TEXT,
+            start_date TEXT,
+            last_date TEXT,
+            apply_link TEXT,
             source TEXT,
             location TEXT
         )
     """)
   conn.commit()
 
-  # Insert comprehensive sample data covering India if table is empty
+  # Insert master data with Start Date, Last Date, Links, etc.
   cursor.execute("SELECT COUNT(*) FROM jobs")
   if cursor.fetchone()[0] == 0:
-    sample_jobs = [
+    master_jobs = [
         (
-            "UPSC Civil Services Exam",
-            "Union Public Service Commission",
-            "Graduate",
+            "Delivery Executive / Partner",
+            "Zomato / Blinkit",
+            "No Certificate / Open (Helper, Delivery, Labor)",
+            "None (Aadhaar Card & Driving License/Cycle)",
+            "Smartphone, Bank Account, Age 18+",
             "All India",
-            "Sarkari",
-            "SarkariResult",
-            "All India",
+            "Private",
+            "2026-01-01",
+            "Open 365 Days",
+            "https://www.zomato.com/delivery",
+            "Direct Partner",
+            "Pan India",
         ),
         (
-            "SBI Probationary Officer",
-            "State Bank of India",
-            "Graduate",
+            "Postal Gramin Dak Sevak (GDS)",
+            "India Post",
+            "10th Pass",
+            "10th Class Marksheet with Math & English",
+            "Basic computer knowledge, Cycling proficiency",
             "All India",
             "Sarkari",
-            "IBPS/SBI",
-            "All India",
+            "2026-06-01",
+            "2026-06-30",
+            "https://indiapostgdsonline.gov.in",
+            "India Post",
+            "All Districts",
         ),
         (
-            "BPSC 70th Combined Exam",
-            "Bihar Public Service Commission",
-            "Graduate",
-            "Bihar",
+            "Odisha Police Constable Recruitment",
+            "Odisha Police",
+            "12th Pass",
+            "12th Pass Certificate + Physical Fitness",
+            "Valid height, running test standards as per Odisha Police norms",
+            "Odisha",
             "Sarkari",
-            "BPSC Portal",
-            "Patna, Bihar",
+            "2026-06-10",
+            "2026-07-15",
+            "https://odishapolice.gov.in",
+            "Odisha Police",
+            "Multiple Districts",
         ),
         (
-            "UPPSC Staff Nurse Vacancy",
-            "Uttar Pradesh PSC",
-            "Diploma / GNM",
-            "Uttar Pradesh",
+            "ITI Electrician / Fitter Apprentice",
+            "NTPC Limited",
+            "Certificate / ITI / Diploma",
+            "ITI Certificate in Electrician/Fitter trade",
+            "NCVT/SCVT registration, Age 18-28 years",
+            "Odisha",
             "Sarkari",
-            "UPPSC",
-            "Lucknow, UP",
-        ),
-        (
-            "MPSC Gazetted Civil Services",
-            "Maharashtra PSC",
-            "Graduate",
-            "Maharashtra",
-            "Sarkari",
-            "MPSC",
-            "Mumbai, Maharashtra",
+            "2026-06-01",
+            "2026-06-25",
+            "https://ntpc.co.in",
+            "NTPC Portal",
+            "Talcher, Odisha",
         ),
         (
             "Software Engineer - Python",
             "Tech Mahindra",
-            "B.Tech / MCA",
+            "Professional / Technical (B.Tech, CA, MBBS)",
+            "B.Tech / MCA Degree",
+            "Strong knowledge of Python, Django, SQL",
             "Karnataka",
             "Private",
+            "2026-06-05",
+            "2026-07-10",
+            "https://www.techmahindra.com/careers",
             "Naukri",
             "Bangalore",
-        ),
-        (
-            "Data Analyst",
-            "TCS",
-            "Graduate",
-            "Telangana",
-            "Private",
-            "LinkedIn",
-            "Hyderabad",
-        ),
-        (
-            "Junior Data Entry Operator",
-            "Local E-Commerce Hub",
-            "12th Pass",
-            "Delhi",
-            "Private",
-            "Indeed",
-            "New Delhi",
-        ),
-        (
-            "Field Delivery Executive",
-            "QuickLogistics",
-            "10th Pass",
-            "West Bengal",
-            "Private",
-            "Local Walk-in",
-            "Kolkata",
-        ),
-        (
-            "Store Assistant / Helper",
-            "Retail Chain",
-            "10th / 12th",
-            "Rajasthan",
-            "Private",
-            "Monster India",
-            "Jaipur",
         ),
     ]
     cursor.executemany(
         """
-            INSERT INTO jobs (job_title, company, qualification, state, job_type, source, location)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO jobs (job_title, company, qualification, certificate_needed, requirements, state, job_type, start_date, last_date, apply_link, source, location)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        sample_jobs,
+        master_jobs,
     )
     conn.commit()
   conn.close()
 
 
-# Fetch Live Jobs Function (Simulating nationwide expansion)
+# Live Sync Function
 def fetch_and_add_live_jobs():
   conn = sqlite3.connect(DB_PATH)
   cursor = conn.cursor()
 
-  new_jobs = [
-      (
-          "RRB NTPC Graduate & Undergrad",
-          "Railway Recruitment Board",
-          "12th / Graduate",
-          "All India",
-          "Sarkari",
-          "RRB",
-          "Multiple States",
-      ),
-      (
-          "Python Django Developer",
-          "Startup Inc",
-          "B.Tech",
-          "Maharashtra",
-          "Private",
-          "Wellfound",
-          "Pune",
-      ),
-      (
-          "Customer Support Executive",
-          "Genpact",
-          "Graduate",
-          "Uttar Pradesh",
-          "Private",
-          "Naukri",
-          "Noida",
-      ),
-      (
-          "Bihar Police Constable Recruitment",
-          "CSBC Bihar",
-          "12th Pass",
-          "Bihar",
-          "Sarkari",
-          "CSBC",
-          "Patna, Bihar",
-      ),
-  ]
+  scraped_jobs = []
+  try:
+    response = requests.get(
+        "https://www.arbeitnow.com/api/job-board-api", timeout=10
+    )
+    if response.status_code == 200:
+      data = response.json().get("data", [])
+      for item in data[:8]:
+        title = item.get("title", "Job Title")
+        company = item.get("company_name", "Private Company")
+        url = item.get("url", "https://www.arbeitnow.com")
+        location = item.get("location", "India / Remote")
+        scraped_jobs.append(
+            (
+                title,
+                company,
+                "Professional / Technical (B.Tech, CA, MBBS)",
+                "Graduation Degree",
+                "Good communication and technical skills",
+                "All India",
+                "Private",
+                "2026-06-01",
+                "Ongoing",
+                url,
+                "Live API",
+                location,
+            )
+        )
+  except Exception as e:
+    pass
 
   added_count = 0
-  for job in new_jobs:
-    # Check duplicate
+  for job in scraped_jobs:
     cursor.execute(
-        "SELECT COUNT(*) FROM jobs WHERE job_title = ? AND state = ?",
-        (job[0], job[3]),
+        "SELECT COUNT(*) FROM jobs WHERE job_title = ? AND company = ?",
+        (job[0], job[1]),
     )
     if cursor.fetchone()[0] == 0:
       cursor.execute(
           """
-                INSERT INTO jobs (job_title, company, qualification, state, job_type, source, location)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO jobs (job_title, company, qualification, certificate_needed, requirements, state, job_type, start_date, last_date, apply_link, source, location)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
           job,
       )
@@ -244,87 +233,101 @@ def fetch_and_add_live_jobs():
   return added_count
 
 
-# Initialize DB on load
+# Initialize Database
 init_db()
 
 # --- UI Layout ---
-st.title("🇮🇳 All-India Job Aggregator Dashboard (Sarkari & Private)")
+st.title("🇮🇳 India Master Job Aggregator Dashboard")
 st.markdown(
-    "Find small-to-large scale **Sarkari** and **Private** jobs spanning across"
-    " all states and union territories of India."
+    "Complete tracking platform with **Start Dates, Last Dates, Eligibility,"
+    " and Direct Apply Links**."
 )
 
-# Sidebar for controls and filters
-st.sidebar.header("🔍 Filters & Controls")
+# Sidebar Filters
+st.sidebar.header("🎛️ Master Search Filters")
 
-if st.sidebar.button("🔄 Fetch & Update Live Jobs"):
-  count = fetch_and_add_live_jobs()
-  st.sidebar.success(f"Successfully added {count} new pan-India jobs!")
+if st.sidebar.button("🔄 Sync Live Vacancies"):
+  with st.spinner("Syncing latest pan-India opportunities..."):
+    count = fetch_and_add_live_jobs()
+  st.sidebar.success(f"Synced {count} new entries!")
+  st.rerun()
 
-# Filter by Job Type (Sarkari vs Private vs All)
-job_type_filter = st.sidebar.radio(
-    "Select Job Category:", ["All Jobs", "Sarkari", "Private"]
+job_category = st.sidebar.radio(
+    "Sector:", ["All Jobs", "Sarkari", "Private"]
+)
+selected_state = st.sidebar.selectbox("State / UT:", INDIAN_STATES)
+selected_qualification = st.sidebar.selectbox(
+    "Qualification Level:", QUALIFICATION_LEVELS
 )
 
-# Filter by State
-selected_state = st.sidebar.selectbox("Select State / UT:", INDIAN_STATES)
-
-# Load data from SQLite
+# Load Database
 conn = sqlite3.connect(DB_PATH)
-query = "SELECT * FROM jobs"
-df = pd.read_sql(query, conn)
+df = pd.read_sql("SELECT * FROM jobs", conn)
 conn.close()
 
 # Apply Filters
-if job_type_filter != "All Jobs":
-  df = df[df["job_type"] == job_type_filter]
+if job_category != "All Jobs":
+  df = df[df["job_type"] == job_category]
 
 if selected_state != "All India":
   df = df[df["state"] == selected_state]
 
-# Main Search Bar
+if selected_qualification != "All Qualifications":
+  df = df[df["qualification"] == selected_qualification]
+
+# Global Search Bar
 search_query = st.text_input(
-    "🔍 Search by Job Title, Company, Qualification, or Location:"
+    "🔎 Search by Job, Company, Skill, or Location:"
 )
 if search_query:
   df = df[
       df["job_title"].str.contains(search_query, case=False, na=False)
       | df["company"].str.contains(search_query, case=False, na=False)
       | df["qualification"].str.contains(search_query, case=False, na=False)
+      | df["requirements"].str.contains(search_query, case=False, na=False)
       | df["location"].str.contains(search_query, case=False, na=False)
   ]
 
-# Display Metrics
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Jobs Found", len(df))
-col2.metric(
-    "Sarkari Jobs", len(df[df["job_type"] == "Sarkari"]) if not df.empty else 0
+# Metrics
+c1, c2, c3 = st.columns(3)
+c1.metric("Matching Jobs Available", len(df))
+c2.metric(
+    "Sarkari Openings",
+    len(df[df["job_type"] == "Sarkari"]) if not df.empty else 0,
 )
-col3.metric(
-    "Private Jobs", len(df[df["job_type"] == "Private"]) if not df.empty else 0
+c3.metric(
+    "Private Openings",
+    len(df[df["job_type"] == "Private"]) if not df.empty else 0,
 )
 
 st.markdown("---")
 
-# Display Table
+# Detailed View / Cards with Start Date, Last Date & Apply Links
 if not df.empty:
-  st.dataframe(
-      df[
-          [
-              "job_title",
-              "company",
-              "qualification",
-              "state",
-              "job_type",
-              "location",
-              "source",
-          ]
-      ],
-      use_container_width=True,
-  )
+  st.subheader("📋 Available Job Openings & Requirements")
+  for idx, row in df.iterrows():
+    with st.expander(f"📌 {row['job_title']} — {row['company']} ({row['state']})"):
+      col_a, col_b = st.columns(2)
+      with col_a:
+        st.write(f"**Sector / Type:** {row['job_type']}")
+        st.write(f"**Location:** {row['location']}")
+        st.write(f"**Qualification Required:** {row['qualification']}")
+        st.write(f"**Certificate Needed:** {row['certificate_needed']}")
+      with col_b:
+        st.write(f"**Eligibility / Requirements:** {row['requirements']}")
+        st.write(f"**Start Date:** 🚀 {row['start_date']}")
+        st.write(f"**Last Date to Apply:** ⏰ {row['last_date']}")
+        st.write(f"**Source Platform:** {row['source']}")
+
+      # Direct Clickable Apply Link Button
+      st.markdown(
+          f"👉 **[Click Here to Apply / View Official Notice]"
+          f"({row['apply_link']})**",
+          unsafe_allow_html=True,
+      )
 else:
   st.warning(
-      "No jobs found matching your filters. Try selecting 'All India' or 'All"
-      " Jobs'."
-)
-    
+      "No listings match your selected combination. Try clearing filters or"
+      " clicking 'Sync Live Vacancies'."
+    )
+          
