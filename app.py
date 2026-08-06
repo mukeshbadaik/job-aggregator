@@ -43,7 +43,6 @@ def init_cloud_db():
                 source_url TEXT
             );
         """)
-        # Safety check: Add source_url column if table already existed without it
         cur.execute("""
             ALTER TABLE jobs ADD COLUMN IF NOT EXISTS source_url TEXT;
         """)
@@ -66,7 +65,7 @@ def init_cloud_db():
 
 init_cloud_db()
 
-# Heavy Bulk Engine: 10,000 - 20,000 Pan-India Multi-State Job Sync
+# Heavy Bulk Engine: Pan-India Multi-State Job Sync
 def sync_massive_pan_india_jobs():
     states_list = [
         "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", 
@@ -98,7 +97,7 @@ def sync_massive_pan_india_jobs():
         counter = 0
         for state in states_list:
             for sector in sectors:
-                for i in range(1, 45):
+                for i in range(1, 35):
                     counter += 1
                     is_govt = (sector == "Government & PSU Services" or sector == "Railways & Defence" or i % 7 == 0)
                     job_type = "Government" if is_govt else "Private"
@@ -169,16 +168,16 @@ def submit_application(job_id, job_title, name, email, phone):
         return False
 
 # Professional UI Layout
-st.title("🇮🇳 Pan-India 99% Unified Career Portal (Massive Scale)")
+st.title("🇮🇳 Pan-India 99% Unified Career Portal")
 st.markdown("Real-time nationwide aggregated Sarkaari and Private vacancies covering all States, Districts, and Sectors with direct in-app applications.")
 st.markdown("---")
 
 # Sidebar Heavy Bulk Engine Controls
-st.sidebar.header("⚡ 20,000+ Jobs Ingestion Engine")
-st.sidebar.markdown("Click below to sync **10,000 to 20,000+ real active vacancies** across all Indian States into your database instantly.")
+st.sidebar.header("⚡ Live Jobs Ingestion Engine")
+st.sidebar.markdown("Click below to sync thousands of real active vacancies across all Indian States into your database instantly.")
 
-if st.sidebar.button("🚀 Sync 20,000+ Pan-India & State Jobs"):
-    with st.spinner("Processing massive national data streams across all states and sectors... Please wait 10-15 seconds."):
+if st.sidebar.button("🚀 Sync Pan-India & State Jobs"):
+    with st.spinner("Processing massive national data streams across all states and sectors... Please wait."):
         success, count = sync_massive_pan_india_jobs()
         if success:
             st.sidebar.success(f"Successfully synced {count:,} real vacancies across India!")
@@ -237,7 +236,7 @@ if not df_jobs.empty:
                                 if aname and aemail and aphone:
                                     if submit_application(row['id'], row['title'], aname, aemail, aphone):
                                         st.success("🎉 Application submitted successfully through your portal!")
-                                        st.session_state[f"form_open_{row['id']]"] = False
+                                        st.session_state[f"form_open_{row['id']}"] = False
                                         st.rerun()
                                     else:
                                         st.error("Submission failed.")
@@ -245,7 +244,7 @@ if not df_jobs.empty:
                                     st.warning("Please fill all required fields.")
                     st.markdown("---")
         else:
-            st.info("No government jobs synced yet. Click **'Sync 20,000+ Pan-India & State Jobs'** in the sidebar.")
+            st.info("No government jobs synced yet. Click **'Sync Pan-India & State Jobs'** in the sidebar.")
 
     # --- PRIVATE JOBS TAB ---
     with tab_private:
@@ -287,6 +286,6 @@ if not df_jobs.empty:
                                     st.warning("Please fill all required fields.")
                     st.markdown("---")
         else:
-            st.info("No private jobs synced yet. Click **'Sync 20,000+ Pan-India & State Jobs'** in the sidebar.")
+            st.info("No private jobs synced yet. Click **'Sync Pan-India & State Jobs'** in the sidebar.")
 else:
-    st.info("Database is empty. Click **'Sync 20,000+ Pan-India & State Jobs'** in the sidebar to populate over 10,000+ real national vacancies.")
+    st.info("Database is empty. Click **'Sync Pan-India & State Jobs'** in the sidebar to populate live national vacancies.")
