@@ -268,4 +268,3 @@ if not df_jobs.empty:
             st.info("No private jobs found. Click **'Sync Pan-India Jobs'** in the sidebar.")
 else:
     st.info("Database is empty. Click **'Sync Pan-India Jobs'** in the sidebar to populate live national vacancies.")
-                
