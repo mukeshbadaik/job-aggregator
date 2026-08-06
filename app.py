@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
 import psycopg2
-import random
-from datetime import datetime, timedelta
+from datetime import datetime, date
 
 # Page Configuration
 st.set_page_config(
@@ -22,11 +21,12 @@ def get_cloud_connection():
         sslmode="require"
     )
 
-# Initialize Database Schema
+# Initialize Database Schemas
 def init_cloud_db():
     try:
         conn = get_cloud_connection()
         cur = conn.cursor()
+        # Jobs Table
         cur.execute("""
             CREATE TABLE IF NOT EXISTS jobs (
                 id SERIAL PRIMARY KEY,
@@ -39,7 +39,19 @@ def init_cloud_db():
                 start_date DATE,
                 last_date DATE,
                 total_openings INT DEFAULT 1,
-                apply_link TEXT
+                job_type TEXT DEFAULT 'Private'
+            );
+        """)
+        # Applications Table for In-App Apply
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS job_applications (
+                id SERIAL PRIMARY KEY,
+                job_id INT,
+                job_title TEXT,
+                applicant_name TEXT,
+                applicant_email TEXT,
+                phone_number TEXT,
+                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
         conn.commit()
@@ -50,64 +62,76 @@ def init_cloud_db():
 
 init_cloud_db()
 
-# Dummy Data Generators for Batch Ingestion
-SECTORS = ["Information Technology", "Manufacturing", "Banking & Financial", "Healthcare", "E-Commerce"]
-STATES = ["Maharashtra", "Karnataka", "Delhi NCR", "Tamil Nadu", "Telangana", "Uttar Pradesh"]
-QUALIFICATIONS = ["B.Tech / B.E.", "MBA / PGDM", "B.Sc / M.Sc", "Diploma", "Any Graduate"]
-TITLES = ["Software Engineer", "Data Analyst", "Operations Manager", "HR Executive", "Finance Manager"]
-COMPANIES = ["TCS", "Infosys", "Reliance Industries", "Wipro", "HDFC Bank", "Tata Motors", "Zomato"]
+# Insert Single Real Job to DB
+def insert_real_job(title, company, sector, state, qual, salary, start_date, last_date, openings, job_type):
+    try:
+        conn = get_cloud_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO jobs (title, company, sector, state, qualification, salary, start_date, last_date, total_openings, job_type)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (title, company, sector, state, qual, salary, start_date, last_date, openings, job_type))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return True
+    except Exception as e:
+        return False
 
-def generate_job_batch(batch_size):
-    data = []
-    for _ in range(batch_size):
-        title = random.choice(TITLES)
-        company = random.choice(COMPANIES)
-        sector = random.choice(SECTORS)
-        state = random.choice(STATES)
-        qual = random.choice(QUALIFICATIONS)
-        salary = f"{random.randint(3, 25)} LPA"
-        start_date = datetime.now().date() - timedelta(days=random.randint(0, 5))
-        last_date = datetime.now().date() + timedelta(days=random.randint(15, 45))
-        total_openings = random.randint(1, 15)
-        apply_link = "https://www.linkedin.com/jobs/"
-        
-        data.append((title, company, sector, state, qual, salary, start_date, last_date, total_openings, apply_link))
-    return data
-
-def insert_jobs_to_db(records):
-    conn = get_cloud_connection()
-    cur = conn.cursor()
-    cur.executemany("""
-        INSERT INTO jobs (title, company, sector, state, qualification, salary, start_date, last_date, total_openings, apply_link)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """, records)
-    conn.commit()
-    cur.close()
-    conn.close()
+# Save Application to DB
+def submit_application(job_id, job_title, name, email, phone):
+    try:
+        conn = get_cloud_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO job_applications (job_id, job_title, applicant_name, applicant_email, phone_number)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (job_id, job_title, name, email, phone))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return True
+    except Exception as e:
+        return False
 
 # Professional UI Layout
-st.title("💼 Pan-India Enterprise Job Portal")
-st.markdown("Real-time scalable enterprise career portal securely connected to Supabase PostgreSQL.")
+st.title("💼 Pan-India Unified Career Portal")
+st.markdown("Real Sarkaari and Private Sector Vacancies with Direct In-App Application Support.")
 st.markdown("---")
 
-# Sidebar Controls for Live Ingestion & Filters
-st.sidebar.header("⚙️ Portal Controls")
+# Sidebar Admin Panel for Real Job Postings
+st.sidebar.header("🛠️ Admin Panel (Post Real Job)")
+with st.sidebar.form("admin_job_form"):
+    st.markdown("### Add Real Vacancy")
+    r_title = st.text_input("Job Title / Role")
+    r_company = st.text_input("Company / Department Name")
+    r_job_type = st.selectbox("Job Type", ["Government", "Private"])
+    r_sector = st.text_input("Sector (e.g., Banking, IT, Railways)")
+    r_state = st.selectbox("State / Location", ["Pan-India", "Maharashtra", "Karnataka", "Delhi NCR", "Uttar Pradesh", "Tamil Nadu", "Odisha", "Other"])
+    r_qual = st.selectbox("Eligibility / Qualification", ["10th / 12th Pass", "ITI / Diploma", "B.Tech / B.E.", "MBA / PGDM", "Any Graduate"])
+    r_salary = st.text_input("Salary / Pay Scale (e.g., 6 LPA or Level 7)")
+    r_start = st.date_input("Start Date", value=date.today())
+    r_last = st.date_input("Last Date to Apply", value=date.today())
+    r_openings = st.number_input("Total Openings", min_value=1, value=10)
+    
+    submitted_job = st.form_submit_button("Publish Real Job")
+    if submitted_job:
+        if r_title and r_company:
+            success = insert_real_job(r_title, r_company, r_sector, r_state, r_qual, r_salary, r_start, r_last, r_openings, r_job_type)
+            if success:
+                st.sidebar.success("Real vacancy published successfully!")
+                st.rerun()
+            else:
+                st.sidebar.error("Failed to publish job.")
+        else:
+            st.sidebar.warning("Please enter Job Title and Company.")
 
-with st.sidebar.expander("📥 Live Ingestion Panel"):
-    batch_count = st.selectbox("Select Batch Size", [500, 1000, 5000])
-    if st.button("Simulate & Insert Batch"):
-        with st.spinner(f"Generating and inserting {batch_count} records..."):
-            batch_data = generate_job_batch(batch_count)
-            insert_jobs_to_db(batch_data)
-            st.sidebar.success(f"Successfully added {batch_count} jobs!")
-            st.rerun()
-
-# Fetch Data for Filters & Display
-@st.cache_data(ttl=60)
+# Fetch Jobs Data
+@st.cache_data(ttl=10)
 def fetch_jobs():
     try:
         conn = get_cloud_connection()
-        query = "SELECT title, company, sector, state, qualification, salary, start_date, last_date, total_openings, apply_link FROM jobs"
+        query = "SELECT id, title, company, sector, state, qualification, salary, start_date, last_date, total_openings, job_type FROM jobs ORDER BY id DESC"
         df = pd.read_sql(query, conn)
         conn.close()
         return df
@@ -117,50 +141,117 @@ def fetch_jobs():
 df_jobs = fetch_jobs()
 
 if not df_jobs.empty:
-    st.sidebar.markdown("---")
-    st.sidebar.header("🔍 Filter Job Openings")
-    
-    selected_state = st.sidebar.selectbox("Filter by State", ["All"] + list(df_jobs["state"].dropna().unique()))
-    selected_sector = st.sidebar.selectbox("Filter by Sector", ["All"] + list(df_jobs["sector"].dropna().unique()))
-    selected_qual = st.sidebar.selectbox("Filter by Qualification", ["All"] + list(df_jobs["qualification"].dropna().unique()))
+    tab_govt, tab_private = st.tabs(["🏛️ Sarkaari Jobs (Government)", "💼 Private Jobs"])
 
-    # Apply Filters
-    filtered_df = df_jobs.copy()
-    if selected_state != "All":
-        filtered_df = filtered_df[filtered_df["state"] == selected_state]
-    if selected_sector != "All":
-        filtered_df = filtered_df[filtered_df["sector"] == selected_sector]
-    if selected_qual != "All":
-        filtered_df = filtered_df[filtered_df["qualification"] == selected_qual]
+    # --- GOVT JOBS TAB ---
+    with tab_govt:
+        st.subheader("Government & PSU Sector Vacancies")
+        govt_df = df_jobs[df_jobs["job_type"] == "Government"]
+        
+        if not govt_df.empty:
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                g_state = st.selectbox("Filter State (Govt)", ["All"] + list(govt_df["state"].dropna().unique()), key="g_state")
+            with col_f2:
+                g_qual = st.selectbox("Filter Qualification (Govt)", ["All"] + list(govt_df["qualification"].dropna().unique()), key="g_qual")
+            
+            if g_state != "All":
+                govt_df = govt_df[govt_df["state"] == g_state]
+            if g_qual != "All":
+                govt_df = govt_df[govt_df["qualification"] == g_qual]
 
-    st.subheader(f"Available Openings ({len(filtered_df)} jobs found)")
+            st.write(f"Found **{len(govt_df)}** Sarkaari vacancies")
+            
+            for index, row in govt_df.iterrows():
+                with st.container():
+                    c1, c2, c3 = st.columns([3, 2, 1])
+                    with c1:
+                        st.markdown(f"### **{row['title']}**")
+                        st.write(f"🏢 **Department:** {row['company']} | 🏷️ **Sector:** {row['sector']}")
+                        st.write(f"📍 **State:** {row['state']} | 🎓 **Eligibility:** {row['qualification']}")
+                    with c2:
+                        st.write(f"💰 **Pay Scale:** {row['salary']}")
+                        st.write(f"📅 **Last Date:** {row['last_date']} | 👥 **Openings:** {row['total_openings']}")
+                    with c3:
+                        if st.button("Apply Now", key=f"govt_btn_{row['id']}"):
+                            st.session_state[f"form_open_{row['id']}"] = True
 
-    # Pagination Logic
-    items_per_page = 20
-    total_pages = max(1, (len(filtered_df) + items_per_page - 1) // items_per_page)
-    
-    page = st.number_input("Page", min_value=1, max_value=total_pages, step=1)
-    start_idx = (page - 1) * items_per_page
-    end_idx = start_idx + items_per_page
+                    if st.session_state.get(f"form_open_{row['id']}", False):
+                        with st.form(key=f"govt_form_{row['id']}"):
+                            st.markdown(f"#### Sarkaari Application: {row['title']} ({row['company']})")
+                            aname = st.text_input("Full Name", key=f"gn_{row['id']}")
+                            aemail = st.text_input("Email Address", key=f"ge_{row['id']}")
+                            aphone = st.text_input("Phone Number", key=f"gp_{row['id']}")
+                            res = st.file_uploader("Upload Resume/Documents (PDF)", type=["pdf", "docx"], key=f"gr_{row['id']}")
+                            
+                            if st.form_submit_button("Submit Sarkaari Application"):
+                                if aname and aemail and aphone:
+                                    if submit_application(row['id'], row['title'], aname, aemail, aphone):
+                                        st.success("🎉 Sarkaari application submitted successfully!")
+                                        st.session_state[f"form_open_{row['id']}"] = False
+                                        st.rerun()
+                                    else:
+                                        st.error("Submission failed. Try again.")
+                                else:
+                                    st.warning("Please fill all fields.")
+                    st.markdown("---")
+        else:
+            st.info("No government jobs available right now. Use the sidebar admin panel to post real government vacancies.")
 
-    paginated_df = filtered_df.iloc[start_idx:end_idx]
+    # --- PRIVATE JOBS TAB ---
+    with tab_private:
+        st.subheader("Private Sector Vacancies")
+        priv_df = df_jobs[df_jobs["job_type"] == "Private"]
+        
+        if not priv_df.empty:
+            col_p1, col_p2 = st.columns(2)
+            with col_p1:
+                p_state = st.selectbox("Filter State (Private)", ["All"] + list(priv_df["state"].dropna().unique()), key="p_state")
+            with col_p2:
+                p_qual = st.selectbox("Filter Qualification (Private)", ["All"] + list(priv_df["qualification"].dropna().unique()), key="p_qual")
+            
+            if p_state != "All":
+                priv_df = priv_df[priv_df["state"] == p_state]
+            if p_qual != "All":
+                priv_df = priv_df[priv_df["qualification"] == p_qual]
 
-    # Render Professional Table/Data View
-    st.dataframe(
-        paginated_df,
-        use_container_width=True,
-        column_config={
-            "title": "Job Title",
-            "company": "Company",
-            "sector": "Sector",
-            "state": "State",
-            "qualification": "Qualification",
-            "salary": "Salary Package",
-            "start_date": "Start Date",
-            "last_date": "Last Date",
-            "total_openings": "Openings",
-            "apply_link": st.column_config.LinkColumn("Apply Link")
-        }
-    )
+            st.write(f"Found **{len(priv_df)}** Private vacancies")
+            
+            for index, row in priv_df.iterrows():
+                with st.container():
+                    c1, c2, c3 = st.columns([3, 2, 1])
+                    with c1:
+                        st.markdown(f"### **{row['title']}**")
+                        st.write(f"🏢 **Company:** {row['company']} | 🏷️ **Sector:** {row['sector']}")
+                        st.write(f"📍 **State:** {row['state']} | 🎓 **Eligibility:** {row['qualification']}")
+                    with c2:
+                        st.write(f"💰 **Salary:** {row['salary']}")
+                        st.write(f"📅 **Last Date:** {row['last_date']} | 👥 **Openings:** {row['total_openings']}")
+                    with c3:
+                        if st.button("Apply Now", key=f"priv_btn_{row['id']}"):
+                            st.session_state[f"form_open_{row['id']}"] = True
+
+                    if st.session_state.get(f"form_open_{row['id']}", False):
+                        with st.form(key=f"priv_form_{row['id']}"):
+                            st.markdown(f"#### Private Application: {row['title']} at {row['company']}")
+                            aname = st.text_input("Full Name", key=f"pn_{row['id']}")
+                            aemail = st.text_input("Email Address", key=f"pe_{row['id']}")
+                            aphone = st.text_input("Phone Number", key=f"pp_{row['id']}")
+                            res = st.file_uploader("Upload Resume (PDF)", type=["pdf", "docx"], key=f"pr_{row['id']}")
+                            
+                            if st.form_submit_button("Submit Private Application"):
+                                if aname and aemail and aphone:
+                                    if submit_application(row['id'], row['title'], aname, aemail, aphone):
+                                        st.success("🎉 Private application submitted successfully!")
+                                        st.session_state[f"form_open_{row['id']}"] = False
+                                        st.rerun()
+                                    else:
+                                        st.error("Submission failed. Try again.")
+                                else:
+                                    st.warning("Please fill all fields.")
+                    st.markdown("---")
+        else:
+            st.info("No private jobs available right now. Use the sidebar admin panel to post real private vacancies.")
 else:
-    st.info("Database is currently empty. Use the sidebar **'Live Ingestion Panel'** to populate data.")
+    st.info("Database is currently empty. Use the sidebar **'Admin Panel'** to add real government or private job vacancies.")
+        
